@@ -1,0 +1,18 @@
+service: payments-api
+datadog:
+  query: service:payments-api env:prod
+k8s:
+  namespace: payments
+  selector: app=payments-api
+github:
+  deployWorkflow: deploy.yml
+  # Optional. Omit to deploy the pull request head branch.
+  deployRef: main
+  # Optional inputs passed as `gh workflow run -f key=value`.
+  workflowInputs:
+    environment: prod
+patch:
+  # Optional. When omitted, any repo file is allowed except .git, absolute paths, and `..`.
+  allow:
+    - "src/**"
+    - "test/**"

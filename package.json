@@ -1,0 +1,27 @@
+{
+  "name": "akg-debug",
+  "version": "0.1.0",
+  "description": "Investigate Datadog and Kubernetes failures, open a GitHub pull request, and deploy through an existing workflow.",
+  "type": "module",
+  "bin": {
+    "akg-debug": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/cli.js",
+    "test": "node --import tsx --test test/*.test.ts",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "execa": "^9.5.2",
+    "yaml": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
