@@ -1,5 +1,5 @@
 /** Shared evidence record. Later sources can emit this without changing diagnose, PR, or deploy. */
-export type SignalSource = "datadog" | "k8s";
+export type SignalSource = "datadog" | "grafana" | "k8s";
 
 export interface Signal {
   source: SignalSource;

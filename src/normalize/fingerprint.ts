@@ -3,8 +3,14 @@ import type { Signal } from "../types.js";
 /** Strip ids, hex, numbers, and timestamps so equal error templates can group together. */
 export function fingerprint(message: string): string {
   return message
-    .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "<id>")
-    .replace(/\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g, "<ts>")
+    .replace(
+      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+      "<id>",
+    )
+    .replace(
+      /\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?/g,
+      "<ts>",
+    )
     .replace(/\b\d{2}:\d{2}:\d{2}(?:\.\d+)?\b/g, "<ts>")
     .replace(/\b[0-9a-f]{8,}\b/gi, "<hex>")
     .replace(/\b\d+\b/g, "<n>")
@@ -18,7 +24,10 @@ export interface FingerprintGroup {
   sample: string;
 }
 
-export function groupFingerprints(messages: string[], limit = 5): FingerprintGroup[] {
+export function groupFingerprints(
+  messages: string[],
+  limit = 5,
+): FingerprintGroup[] {
   const groups = new Map<string, FingerprintGroup>();
   for (const message of messages) {
     const template = fingerprint(message);
@@ -26,7 +35,9 @@ export function groupFingerprints(messages: string[], limit = 5): FingerprintGro
     if (existing) existing.count += 1;
     else groups.set(template, { template, count: 1, sample: message });
   }
-  return [...groups.values()].sort((a, b) => b.count - a.count || a.template.localeCompare(b.template)).slice(0, limit);
+  return [...groups.values()]
+    .sort((a, b) => b.count - a.count || a.template.localeCompare(b.template))
+    .slice(0, limit);
 }
 
 export interface SignalGroup {

@@ -8,6 +8,10 @@ export interface TeamConfig {
   datadog?: {
     query?: string;
   };
+  grafana?: {
+    datasourceUid?: string;
+    query?: string;
+  };
   k8s?: {
     namespace?: string;
     selector?: string;
@@ -29,6 +33,10 @@ export interface ResolvedInvestigateConfig {
   namespace: string;
   query: string;
   selector: string;
+  grafana?: {
+    query: string;
+    datasourceUid: string;
+  };
   allow?: string[];
   deployWorkflow?: string;
   deployRef?: string;
@@ -41,14 +49,21 @@ const SINCE_UNITS: Record<string, number> = {
   d: 86_400_000,
 };
 
-export function parseSince(since: string, now = Date.now()): { from: string; to: string; durationMs: number } {
+export function parseSince(
+  since: string,
+  now = Date.now(),
+): { from: string; to: string; durationMs: number } {
   const match = /^(\d+)([mhd])$/.exec(since.trim());
   if (!match) {
-    throw new CliError(`Invalid --since value "${since}". Use a window like 30m, 1h, or 2d.`);
+    throw new CliError(
+      `Invalid --since value "${since}". Use a window like 30m, 1h, or 2d.`,
+    );
   }
   const amount = Number(match[1]);
   if (!Number.isFinite(amount) || amount <= 0) {
-    throw new CliError(`Invalid --since value "${since}". Use a positive window like 30m, 1h, or 2d.`);
+    throw new CliError(
+      `Invalid --since value "${since}". Use a positive window like 30m, 1h, or 2d.`,
+    );
   }
   const durationMs = amount * SINCE_UNITS[match[2]];
   return {
@@ -65,7 +80,8 @@ function asString(value: unknown): string | undefined {
 }
 
 function asStringMap(value: unknown): Record<string, string> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
   const out: Record<string, string> = {};
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
     const coerced = asString(raw);
@@ -76,7 +92,9 @@ function asStringMap(value: unknown): Record<string, string> | undefined {
 
 function asStringList(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  const items = value.map(asString).filter((item): item is string => Boolean(item));
+  const items = value
+    .map(asString)
+    .filter((item): item is string => Boolean(item));
   return items;
 }
 
@@ -94,15 +112,36 @@ export function loadTeamConfig(repo: string): TeamConfig {
     throw new CliError(`${filePath} must be a YAML mapping.`);
   }
   const raw = parsed as Record<string, unknown>;
-  const datadog = raw.datadog && typeof raw.datadog === "object" ? (raw.datadog as Record<string, unknown>) : undefined;
-  const k8s = raw.k8s && typeof raw.k8s === "object" ? (raw.k8s as Record<string, unknown>) : undefined;
-  const github = raw.github && typeof raw.github === "object" ? (raw.github as Record<string, unknown>) : undefined;
-  const patch = raw.patch && typeof raw.patch === "object" ? (raw.patch as Record<string, unknown>) : undefined;
+  const datadog =
+    raw.datadog && typeof raw.datadog === "object"
+      ? (raw.datadog as Record<string, unknown>)
+      : undefined;
+  const grafana =
+    raw.grafana && typeof raw.grafana === "object" && !Array.isArray(raw.grafana)
+      ? (raw.grafana as Record<string, unknown>)
+      : undefined;
+  const k8s =
+    raw.k8s && typeof raw.k8s === "object"
+      ? (raw.k8s as Record<string, unknown>)
+      : undefined;
+  const github =
+    raw.github && typeof raw.github === "object"
+      ? (raw.github as Record<string, unknown>)
+      : undefined;
+  const patch =
+    raw.patch && typeof raw.patch === "object"
+      ? (raw.patch as Record<string, unknown>)
+      : undefined;
 
   return {
     service: asString(raw.service),
     datadog: datadog ? { query: asString(datadog.query) } : undefined,
-    k8s: k8s ? { namespace: asString(k8s.namespace), selector: asString(k8s.selector) } : undefined,
+    grafana: grafana
+      ? { datasourceUid: asString(grafana.datasourceUid), query: asString(grafana.query) }
+      : undefined,
+    k8s: k8s
+      ? { namespace: asString(k8s.namespace), selector: asString(k8s.selector) }
+      : undefined,
     github: github
       ? {
           deployWorkflow: asString(github.deployWorkflow),
@@ -114,6 +153,15 @@ export function loadTeamConfig(repo: string): TeamConfig {
   };
 }
 
+/** Grafana logs are collected only when a grafana section or --grafana-query is set. */
+export function shouldQueryGrafana(
+  flags: { grafanaQuery?: string },
+  team: TeamConfig,
+): boolean {
+  if (flags.grafanaQuery?.trim()) return true;
+  return team.grafana !== undefined;
+}
+
 export function resolveInvestigateConfig(
   repo: string,
   flags: {
@@ -121,16 +169,23 @@ export function resolveInvestigateConfig(
     service?: string;
     namespace?: string;
     query?: string;
+    grafanaQuery?: string;
+    grafanaDatasource?: string;
   },
   team: TeamConfig,
 ): ResolvedInvestigateConfig {
   const service = flags.service?.trim() || team.service;
   const namespace = flags.namespace?.trim() || team.k8s?.namespace;
   const query = flags.query?.trim() || team.datadog?.query;
+  const grafanaQuery = flags.grafanaQuery?.trim() || team.grafana?.query;
+  const grafanaDatasource = flags.grafanaDatasource?.trim() || team.grafana?.datasourceUid;
+  const queryGrafana = shouldQueryGrafana(flags, team);
   const missing: string[] = [];
   if (!service) missing.push("--service");
   if (!namespace) missing.push("--namespace");
   if (!query) missing.push("--query");
+  if (queryGrafana && !grafanaQuery) missing.push("--grafana-query");
+  if (queryGrafana && !grafanaDatasource) missing.push("--grafana-datasource");
   if (missing.length) {
     throw new CliError(
       `Missing ${missing.join(", ")}. Pass those flags or add them to ${path.join(repo, ".akg-debug.yml")}.`,
@@ -143,6 +198,9 @@ export function resolveInvestigateConfig(
     namespace: namespace as string,
     query: query as string,
     selector: team.k8s?.selector || `app=${service}`,
+    grafana: queryGrafana
+      ? { query: grafanaQuery as string, datasourceUid: grafanaDatasource as string }
+      : undefined,
     allow: team.patch?.allow,
     deployWorkflow: team.github?.deployWorkflow,
     deployRef: team.github?.deployRef,

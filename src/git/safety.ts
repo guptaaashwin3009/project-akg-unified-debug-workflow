@@ -17,7 +17,8 @@ function unquote(value: string): string {
 
 function stripDiffPrefix(filePath: string): string {
   if (filePath === "/dev/null") return "";
-  if (filePath.startsWith("a/") || filePath.startsWith("b/")) return filePath.slice(2);
+  if (filePath.startsWith("a/") || filePath.startsWith("b/"))
+    return filePath.slice(2);
   return filePath;
 }
 
@@ -72,12 +73,18 @@ function globToRegExp(glob: string): RegExp {
   return new RegExp(source);
 }
 
-export function matchesAllow(filePath: string, allow: string[] | undefined): boolean {
+export function matchesAllow(
+  filePath: string,
+  allow: string[] | undefined,
+): boolean {
   if (!allow || allow.length === 0) return !allow;
   return allow.some((glob) => globToRegExp(glob).test(filePath));
 }
 
-export function diffPathProblem(filePath: string, options: DiffSafetyOptions = {}): string | null {
+export function diffPathProblem(
+  filePath: string,
+  options: DiffSafetyOptions = {},
+): string | null {
   const normalized = filePath.replace(/\\/g, "/").trim();
   if (!normalized) return "diff contains an empty path";
   if (normalized.startsWith("/") || /^[A-Za-z]:\//.test(normalized)) {
@@ -100,7 +107,10 @@ export function diffPathProblem(filePath: string, options: DiffSafetyOptions = {
 }
 
 /** Returns the first reason the diff must not be applied, or null when it is safe. */
-export function unsafeDiffReason(diff: string, options: DiffSafetyOptions = {}): string | null {
+export function unsafeDiffReason(
+  diff: string,
+  options: DiffSafetyOptions = {},
+): string | null {
   const trimmed = diff.trim();
   if (!trimmed) return null;
   const paths = extractDiffPaths(trimmed);
@@ -112,7 +122,10 @@ export function unsafeDiffReason(diff: string, options: DiffSafetyOptions = {}):
   return null;
 }
 
-export function assertSafeDiff(diff: string, options: DiffSafetyOptions = {}): void {
+export function assertSafeDiff(
+  diff: string,
+  options: DiffSafetyOptions = {},
+): void {
   const reason = unsafeDiffReason(diff, options);
   if (reason) {
     const error = new Error(`Rejected diff: ${reason}`);

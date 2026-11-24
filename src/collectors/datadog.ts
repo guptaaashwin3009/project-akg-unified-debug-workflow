@@ -11,7 +11,11 @@ export function buildLogQuery(query: string): string {
   return `${trimmed} status:error`;
 }
 
-export function buildLogSearchBody(query: string, from: string, to: string): {
+export function buildLogSearchBody(
+  query: string,
+  from: string,
+  to: string,
+): {
   filter: { query: string; from: string; to: string };
   page: { limit: number };
 } {
@@ -26,7 +30,8 @@ export function buildLogSearchBody(query: string, from: string, to: string): {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
   return value as Record<string, unknown>;
 }
 
@@ -38,7 +43,10 @@ function asString(value: unknown): string | undefined {
 
 export function splitStack(text: string): { message: string; stack?: string } {
   const normalized = text.replace(/\r\n/g, "\n");
-  const match = /\n(?:\s+at\s+|Traceback \(most recent call|\s+File ["']|\s+\S+\.go:\d+)/.exec(normalized);
+  const match =
+    /\n(?:\s+at\s+|Traceback \(most recent call|\s+File ["']|\s+\S+\.go:\d+)/.exec(
+      normalized,
+    );
   if (!match || match.index === undefined) {
     return { message: normalized.trim() };
   }
@@ -47,18 +55,28 @@ export function splitStack(text: string): { message: string; stack?: string } {
   return { message: message || normalized.trim(), stack };
 }
 
-function cappedAttributes(attributes: Record<string, unknown> | undefined): Record<string, unknown> {
+function cappedAttributes(
+  attributes: Record<string, unknown> | undefined,
+): Record<string, unknown> {
   if (!attributes) return {};
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(attributes)) {
     if (out && Object.keys(out).length >= 20) break;
     if (typeof value === "string") out[key] = value.slice(0, 500);
-    else if (typeof value === "number" || typeof value === "boolean" || value === null) out[key] = value;
+    else if (
+      typeof value === "number" ||
+      typeof value === "boolean" ||
+      value === null
+    )
+      out[key] = value;
   }
   return out;
 }
 
-export function signalsFromDatadogResponse(payload: unknown, fallbackService: string): Signal[] {
+export function signalsFromDatadogResponse(
+  payload: unknown,
+  fallbackService: string,
+): Signal[] {
   const root = asRecord(payload);
   const data = Array.isArray(root?.data) ? root.data : [];
   const signals: Signal[] = [];
@@ -74,12 +92,14 @@ export function signalsFromDatadogResponse(payload: unknown, fallbackService: st
       "";
     if (!rawMessage) continue;
     const { message, stack } = splitStack(rawMessage);
-    const nestedStack = asString(nested?.stack) || asString(asRecord(nested?.error)?.stack);
+    const nestedStack =
+      asString(nested?.stack) || asString(asRecord(nested?.error)?.stack);
     signals.push({
       source: "datadog",
       timestamp: asString(attributes.timestamp) || new Date(0).toISOString(),
       service: asString(attributes.service) || fallbackService,
-      severity: asString(attributes.status) || asString(nested?.status) || "error",
+      severity:
+        asString(attributes.status) || asString(nested?.status) || "error",
       message,
       stack: stack || nestedStack,
       attributes: cappedAttributes(nested ?? attributes),
@@ -103,7 +123,9 @@ export async function searchDatadogLogs(
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify(buildLogSearchBody(input.query, input.from, input.to)),
+      body: JSON.stringify(
+        buildLogSearchBody(input.query, input.from, input.to),
+      ),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -113,13 +135,17 @@ export async function searchDatadogLogs(
     throw new DatadogUnauthorizedError();
   }
   if (!response.ok) {
-    throw new CliError(`Datadog log search failed with HTTP ${response.status}.`);
+    throw new CliError(
+      `Datadog log search failed with HTTP ${response.status}.`,
+    );
   }
   let payload: unknown;
   try {
     payload = await response.json();
   } catch {
-    throw new CliError("Datadog log search returned a response that was not JSON.");
+    throw new CliError(
+      "Datadog log search returned a response that was not JSON.",
+    );
   }
   return signalsFromDatadogResponse(payload, input.service);
 }

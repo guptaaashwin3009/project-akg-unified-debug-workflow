@@ -14,8 +14,15 @@ export interface LlmCredentials {
   baseUrl: string;
 }
 
+export interface GrafanaCredentials {
+  baseUrl: string;
+  token: string;
+  orgId?: string;
+}
+
 export interface CredentialFile {
   datadog?: DatadogCredentials;
+  grafana?: GrafanaCredentials;
   llm?: LlmCredentials;
   kube?: {
     context?: string;
@@ -71,17 +78,24 @@ export function loadCredentials(): CredentialFile {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    throw new CliError(`Credentials file ${filePath} is not valid JSON. Fix or remove it, then run akg-debug auth again.`);
+    throw new CliError(
+      `Credentials file ${filePath} is not valid JSON. Fix or remove it, then run akg-debug auth again.`,
+    );
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
   return parsed as CredentialFile;
 }
 
 export function saveCredentials(credentials: CredentialFile): void {
-  writeSecretFile(credentialsPath(), `${JSON.stringify(credentials, null, 2)}\n`);
+  writeSecretFile(
+    credentialsPath(),
+    `${JSON.stringify(credentials, null, 2)}\n`,
+  );
 }
 
-export function updateCredentials(patch: Partial<CredentialFile>): CredentialFile {
+export function updateCredentials(
+  patch: Partial<CredentialFile>,
+): CredentialFile {
   const current = loadCredentials();
   const next: CredentialFile = {
     ...current,

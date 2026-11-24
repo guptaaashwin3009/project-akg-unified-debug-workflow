@@ -1,14 +1,25 @@
 import path from "node:path";
 import { ensureDatadog, replaceDatadogAfterRejection } from "./auth/datadog.js";
 import { ensureGithub } from "./auth/github.js";
+import { ensureGrafana, replaceGrafanaAfterRejection } from "./auth/grafana.js";
 import { rememberKubeContext } from "./auth/kube.js";
 import { ensureLlm, replaceLlmAfterRejection } from "./auth/llm.js";
 import { isInteractive } from "./auth/prompt.js";
 import { searchDatadogLogs } from "./collectors/datadog.js";
+import { searchGrafanaLogs } from "./collectors/grafana.js";
 import { collectKubeLogs } from "./collectors/kube.js";
-import { loadTeamConfig, parseSince, resolveInvestigateConfig } from "./config.js";
+import {
+  loadTeamConfig,
+  parseSince,
+  resolveInvestigateConfig,
+} from "./config.js";
 import { LlmUnauthorizedError, requestDiagnosis } from "./diagnose/llm.js";
-import { CliError, DatadogUnauthorizedError, KubeAuthError } from "./errors.js";
+import {
+  CliError,
+  DatadogUnauthorizedError,
+  GrafanaUnauthorizedError,
+  KubeAuthError,
+} from "./errors.js";
 import { checkDiffApplies, openPullRequest } from "./git/pr.js";
 import { createRunId } from "./ids.js";
 import { correlateSignals } from "./normalize/correlate.js";
@@ -23,6 +34,8 @@ export interface InvestigateFlags {
   service?: string;
   namespace?: string;
   query?: string;
+  grafanaQuery?: string;
+  grafanaDatasource?: string;
   yes?: boolean;
 }
 
@@ -36,10 +49,14 @@ function formatDiagnosis(diagnosis: Diagnosis): string {
     diagnosis.rootCause,
     "",
     "Evidence",
-    ...(diagnosis.evidence.length ? diagnosis.evidence.map((item) => `- ${item}`) : ["- None recorded."]),
+    ...(diagnosis.evidence.length
+      ? diagnosis.evidence.map((item) => `- ${item}`)
+      : ["- None recorded."]),
     "",
     "Test plan",
-    ...(diagnosis.testPlan.length ? diagnosis.testPlan.map((item) => `- ${item}`) : ["- None recorded."]),
+    ...(diagnosis.testPlan.length
+      ? diagnosis.testPlan.map((item) => `- ${item}`)
+      : ["- None recorded."]),
     "",
     "Deploy notes",
     diagnosis.deployNotes || "None.",
@@ -51,10 +68,13 @@ function formatDiagnosis(diagnosis: Diagnosis): string {
 
 async function resolveRepo(repoFlag?: string): Promise<string> {
   const start = path.resolve(repoFlag || process.cwd());
-  const top = await runCommand("git", ["rev-parse", "--show-toplevel"], { cwd: start });
+  const top = await runCommand("git", ["rev-parse", "--show-toplevel"], {
+    cwd: start,
+  });
   if (top.exitCode !== 0) {
     throw new CliError(
-      firstLine(top.stderr) || `${start} is not a git repository. Pass --repo pointing at the service checkout.`,
+      firstLine(top.stderr) ||
+        `${start} is not a git repository. Pass --repo pointing at the service checkout.`,
     );
   }
   return top.stdout.trim();
@@ -76,6 +96,23 @@ async function collectDatadog(input: {
   }
 }
 
+async function collectGrafana(input: {
+  query: string;
+  datasourceUid: string;
+  from: string;
+  to: string;
+  service: string;
+}): Promise<Signal[]> {
+  let credentials = await ensureGrafana();
+  try {
+    return await searchGrafanaLogs(credentials, input);
+  } catch (error) {
+    if (!(error instanceof GrafanaUnauthorizedError)) throw error;
+    credentials = await replaceGrafanaAfterRejection();
+    return searchGrafanaLogs(credentials, input);
+  }
+}
+
 async function diagnoseWithAuth(
   request: Parameters<typeof requestDiagnosis>[1],
 ): Promise<Diagnosis> {
@@ -89,7 +126,10 @@ async function diagnoseWithAuth(
   }
 }
 
-export async function investigate(flags: InvestigateFlags, confirm: (question: string) => Promise<boolean>): Promise<void> {
+export async function investigate(
+  flags: InvestigateFlags,
+  confirm: (question: string) => Promise<boolean>,
+): Promise<void> {
   const repo = await resolveRepo(flags.repo);
   const team = loadTeamConfig(repo);
   const resolved = resolveInvestigateConfig(repo, flags, team);
@@ -99,7 +139,9 @@ export async function investigate(flags: InvestigateFlags, confirm: (question: s
 
   console.log(`Run ${runId}`);
   console.log(`Repo ${repo}`);
-  console.log(`Service ${resolved.service} in namespace ${resolved.namespace} since ${resolved.since}`);
+  console.log(
+    `Service ${resolved.service} in namespace ${resolved.namespace} since ${resolved.since}`,
+  );
 
   console.log("Searching Datadog logs.");
   const datadogSignals = await collectDatadog({
@@ -108,6 +150,18 @@ export async function investigate(flags: InvestigateFlags, confirm: (question: s
     to: window.to,
     service: resolved.service,
   });
+
+  let grafanaSignals: Signal[] = [];
+  if (resolved.grafana) {
+    console.log("Searching Grafana logs.");
+    grafanaSignals = await collectGrafana({
+      query: resolved.grafana.query,
+      datasourceUid: resolved.grafana.datasourceUid,
+      from: window.from,
+      to: window.to,
+      service: resolved.service,
+    });
+  }
 
   console.log("Reading Kubernetes pods, logs, and events.");
   let contextName: string | undefined;
@@ -131,14 +185,21 @@ export async function investigate(flags: InvestigateFlags, confirm: (question: s
     throw error;
   }
 
-  const signals = [...datadogSignals, ...kubeSignals];
+  const signals = [...datadogSignals, ...grafanaSignals, ...kubeSignals];
   if (signals.length === 0) {
-    console.log("No Datadog or Kubernetes signals were found in that window. No pull request was opened.");
+    const sources = resolved.grafana
+      ? "Datadog, Kubernetes, or Grafana"
+      : "Datadog or Kubernetes";
+    console.log(
+      `No ${sources} signals were found in that window. No pull request was opened.`,
+    );
     return;
   }
 
   const groups = groupSignals(signals, 5);
-  console.log(`Fingerprinted ${signals.length} signal${signals.length === 1 ? "" : "s"} into ${groups.length} group${groups.length === 1 ? "" : "s"}.`);
+  console.log(
+    `Fingerprinted ${signals.length} signal${signals.length === 1 ? "" : "s"} into ${groups.length} group${groups.length === 1 ? "" : "s"}.`,
+  );
   console.log("Correlating stack frames and error text with the repo.");
   const excerpts = correlateSignals(repo, signals, groups);
 
@@ -157,7 +218,9 @@ export async function investigate(flags: InvestigateFlags, confirm: (question: s
   console.log(formatDiagnosis(diagnosis));
   console.log("");
 
-  let rejection = diagnosis.diff.trim() ? await checkDiffApplies(repo, diagnosis.diff, resolved.allow) : null;
+  let rejection = diagnosis.diff.trim()
+    ? await checkDiffApplies(repo, diagnosis.diff, resolved.allow)
+    : null;
   if (rejection) {
     console.error(`Diff was rejected: ${rejection}`);
     console.error("Asking the model once more with the apply error.");
@@ -172,14 +235,16 @@ export async function investigate(flags: InvestigateFlags, confirm: (question: s
       ? await checkDiffApplies(repo, diagnosis.diff, resolved.allow)
       : "model returned an empty diff";
     if (rejection) {
-      saveRun(record({
-        id: runId,
-        repo,
-        service: resolved.service,
-        namespace: resolved.namespace,
-        diagnosis,
-        status: "apply-failed",
-      }));
+      saveRun(
+        record({
+          id: runId,
+          repo,
+          service: resolved.service,
+          namespace: resolved.namespace,
+          diagnosis,
+          status: "apply-failed",
+        }),
+      );
       throw new CliError(
         `Diff could not be applied cleanly: ${rejection}. Saved run ${runId}. The git tree was not changed.`,
       );
@@ -197,7 +262,9 @@ export async function investigate(flags: InvestigateFlags, confirm: (question: s
 
   if (!diagnosis.diff.trim()) {
     saveRun(savedDiagnosis);
-    console.log(`No code change was proposed. Saved run ${runId} without a pull request.`);
+    console.log(
+      `No code change was proposed. Saved run ${runId} without a pull request.`,
+    );
     return;
   }
 
@@ -208,7 +275,8 @@ export async function investigate(flags: InvestigateFlags, confirm: (question: s
     );
   }
 
-  const accepted = flags.yes || (await confirm("Open a pull request with this fix?"));
+  const accepted =
+    flags.yes || (await confirm("Open a pull request with this fix?"));
   if (!accepted) {
     saveRun(savedDiagnosis);
     console.log(`Saved run ${runId} without a pull request.`);
@@ -226,7 +294,9 @@ export async function investigate(flags: InvestigateFlags, confirm: (question: s
   });
   saveRun({ ...savedDiagnosis, branch, status: "pr-opened", prUrl });
   console.log(`Opened ${prUrl}`);
-  console.log(`Saved run ${runId}. Deploy later with \`akg-debug deploy ${runId}\`.`);
+  console.log(
+    `Saved run ${runId}. Deploy later with \`akg-debug deploy ${runId}\`.`,
+  );
 }
 
 function record(input: {

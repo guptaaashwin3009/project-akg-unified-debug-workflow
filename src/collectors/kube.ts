@@ -14,7 +14,8 @@ interface PodRef {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
   return value as Record<string, unknown>;
 }
 
@@ -31,7 +32,10 @@ export function parsePodList(payload: unknown): PodRef[] {
     const containers = Array.isArray(spec?.containers)
       ? spec.containers
           .map((container) => asRecord(container)?.name)
-          .filter((containerName): containerName is string => typeof containerName === "string")
+          .filter(
+            (containerName): containerName is string =>
+              typeof containerName === "string",
+          )
       : [];
     pods.push({ name, containers });
   }
@@ -41,7 +45,10 @@ export function parsePodList(payload: unknown): PodRef[] {
 function capLines(text: string, maxLines: number): string {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   if (lines.length <= maxLines) return lines.join("\n").trim();
-  return lines.slice(lines.length - maxLines).join("\n").trim();
+  return lines
+    .slice(lines.length - maxLines)
+    .join("\n")
+    .trim();
 }
 
 function throwIfAuth(text: string, contextName?: string): void {
@@ -49,18 +56,24 @@ function throwIfAuth(text: string, contextName?: string): void {
   if (auth) throw auth;
 }
 
-async function kubectl(args: string[], contextName?: string): Promise<{ stdout: string; stderr: string }> {
+async function kubectl(
+  args: string[],
+  contextName?: string,
+): Promise<{ stdout: string; stderr: string }> {
   let result;
   try {
     result = await runCommand("kubectl", args);
   } catch (error) {
-    if (error instanceof CliError && /not installed/.test(error.message)) throw error;
+    if (error instanceof CliError && /not installed/.test(error.message))
+      throw error;
     throw error;
   }
   const combined = `${result.stderr}\n${result.stdout}`;
   throwIfAuth(combined, contextName);
   if (result.exitCode !== 0) {
-    throw new CliError(`kubectl ${args[0]} failed: ${firstLine(result.stderr || result.stdout) || `exit ${result.exitCode}`}`);
+    throw new CliError(
+      `kubectl ${args[0]} failed: ${firstLine(result.stderr || result.stdout) || `exit ${result.exitCode}`}`,
+    );
   }
   return result;
 }
@@ -73,7 +86,10 @@ export async function collectKubeLogs(input: {
   contextName?: string;
 }): Promise<Signal[]> {
   const { namespace, selector, since, service, contextName } = input;
-  const podsResult = await kubectl(["get", "pods", "-n", namespace, "-l", selector, "-o", "json"], contextName);
+  const podsResult = await kubectl(
+    ["get", "pods", "-n", namespace, "-l", selector, "-o", "json"],
+    contextName,
+  );
   let podPayload: unknown;
   try {
     podPayload = JSON.parse(podsResult.stdout);
@@ -85,13 +101,21 @@ export async function collectKubeLogs(input: {
   const now = new Date().toISOString();
 
   for (const pod of pods) {
-    const args = ["logs", pod.name, "-n", namespace, `--since=${since}`, `--tail=${LOG_TAIL}`];
+    const args = [
+      "logs",
+      pod.name,
+      "-n",
+      namespace,
+      `--since=${since}`,
+      `--tail=${LOG_TAIL}`,
+    ];
     if (pod.containers.length > 1) args.push("--all-containers");
     let logs;
     try {
       logs = await runCommand("kubectl", args);
     } catch (error) {
-      if (error instanceof KubeAuthError || error instanceof CliError) throw error;
+      if (error instanceof KubeAuthError || error instanceof CliError)
+        throw error;
       continue;
     }
     const combined = `${logs.stderr}\n${logs.stdout}`;
@@ -109,7 +133,11 @@ export async function collectKubeLogs(input: {
     }
     const text = capLines(logs.stdout, MAX_LOG_LINES);
     if (!text) continue;
-    const firstLineOfLog = text.split("\n").map((line) => line.trim()).find(Boolean) ?? text;
+    const firstLineOfLog =
+      text
+        .split("\n")
+        .map((line) => line.trim())
+        .find(Boolean) ?? text;
     signals.push({
       source: "k8s",
       timestamp: now,
@@ -126,7 +154,10 @@ export async function collectKubeLogs(input: {
     });
   }
 
-  const events = await kubectl(["get", "events", "-n", namespace, "-o", "json"], contextName);
+  const events = await kubectl(
+    ["get", "events", "-n", namespace, "-o", "json"],
+    contextName,
+  );
   let eventPayload: unknown;
   try {
     eventPayload = JSON.parse(events.stdout);
@@ -137,7 +168,11 @@ export async function collectKubeLogs(input: {
   return signals;
 }
 
-export function signalsFromEvents(payload: unknown, service: string, namespace: string): Signal[] {
+export function signalsFromEvents(
+  payload: unknown,
+  service: string,
+  namespace: string,
+): Signal[] {
   const root = asRecord(payload);
   const items = Array.isArray(root?.items) ? root.items : [];
   const ranked = items
@@ -152,14 +187,16 @@ export function signalsFromEvents(payload: unknown, service: string, namespace: 
 
   const signals: Signal[] = [];
   for (const event of ranked) {
-    const message = typeof event.message === "string" ? event.message.trim() : "";
+    const message =
+      typeof event.message === "string" ? event.message.trim() : "";
     if (!message) continue;
     const involved = asRecord(event.involvedObject);
     const metadata = asRecord(event.metadata);
     const timestamp =
       (typeof event.lastTimestamp === "string" && event.lastTimestamp) ||
       (typeof event.eventTime === "string" && event.eventTime) ||
-      (typeof metadata?.creationTimestamp === "string" && metadata.creationTimestamp) ||
+      (typeof metadata?.creationTimestamp === "string" &&
+        metadata.creationTimestamp) ||
       new Date(0).toISOString();
     const kind = typeof event.type === "string" ? event.type : "Normal";
     signals.push({

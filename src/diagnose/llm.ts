@@ -30,7 +30,8 @@ export function parseJsonContent(text: string): unknown {
   } catch {
     const start = body.indexOf("{");
     const end = body.lastIndexOf("}");
-    if (start >= 0 && end > start) return JSON.parse(body.slice(start, end + 1));
+    if (start >= 0 && end > start)
+      return JSON.parse(body.slice(start, end + 1));
     throw new CliError("Model response was not valid JSON.");
   }
 }
@@ -64,12 +65,19 @@ export function parseDiagnosis(text: string): Diagnosis {
   }
   const record = parsed as Record<string, unknown>;
   const summary = asString(record.summary)?.trim();
-  const rootCause = (asString(record.rootCause) ?? asString(record.root_cause))?.trim();
+  const rootCause = (
+    asString(record.rootCause) ?? asString(record.root_cause)
+  )?.trim();
   const confidence = confidenceOf(record.confidence);
   const evidence = asStringList(record.evidence);
-  const testPlan = asStringList(record.testPlan) ?? asStringList(record.test_plan);
+  const testPlan =
+    asStringList(record.testPlan) ?? asStringList(record.test_plan);
   const diff = asString(record.diff) ?? "";
-  const deployNotes = (asString(record.deployNotes) ?? asString(record.deploy_notes) ?? "").trim();
+  const deployNotes = (
+    asString(record.deployNotes) ??
+    asString(record.deploy_notes) ??
+    ""
+  ).trim();
   if (!summary || !rootCause || !confidence || !evidence || !testPlan) {
     throw new CliError(
       "Model JSON is missing summary, evidence, confidence, rootCause, or testPlan.",
@@ -111,11 +119,15 @@ function sampleView(signal: Signal): Record<string, unknown> {
   };
 }
 
-export function buildDiagnosisMessages(request: DiagnosisRequest): Array<{ role: "system" | "user"; content: string }> {
+export function buildDiagnosisMessages(
+  request: DiagnosisRequest,
+): Array<{ role: "system" | "user"; content: string }> {
   const payload = {
     service: request.service,
     window: { from: request.from, to: request.to },
-    patchAllow: request.allow ?? "all repository files except .git, absolute paths, and path traversal",
+    patchAllow:
+      request.allow ??
+      "all repository files except .git, absolute paths, and path traversal",
     fingerprints: request.groups.map((group) => ({
       template: group.template,
       count: group.count,
@@ -149,7 +161,11 @@ function chatUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/chat/completions`;
 }
 
-async function postChat(credentials: LlmCredentials, messages: Array<{ role: string; content: string }>, jsonMode: boolean): Promise<Response> {
+async function postChat(
+  credentials: LlmCredentials,
+  messages: Array<{ role: string; content: string }>,
+  jsonMode: boolean,
+): Promise<Response> {
   const body: Record<string, unknown> = {
     model: process.env.AKG_DEBUG_MODEL || "gpt-4o-mini",
     temperature: 0,
@@ -168,7 +184,10 @@ async function postChat(credentials: LlmCredentials, messages: Array<{ role: str
   });
 }
 
-export async function requestDiagnosis(credentials: LlmCredentials, request: DiagnosisRequest): Promise<Diagnosis> {
+export async function requestDiagnosis(
+  credentials: LlmCredentials,
+  request: DiagnosisRequest,
+): Promise<Diagnosis> {
   const messages = buildDiagnosisMessages(request);
   let response: Response;
   try {
@@ -180,9 +199,12 @@ export async function requestDiagnosis(credentials: LlmCredentials, request: Dia
     const message = error instanceof Error ? error.message : String(error);
     throw new CliError(`The model request failed: ${message}`);
   }
-  if (response.status === 401 || response.status === 403) throw new LlmUnauthorizedError();
+  if (response.status === 401 || response.status === 403)
+    throw new LlmUnauthorizedError();
   if (!response.ok) {
-    throw new CliError(`The model request failed with HTTP ${response.status}.`);
+    throw new CliError(
+      `The model request failed with HTTP ${response.status}.`,
+    );
   }
   let payload: unknown;
   try {
@@ -190,7 +212,9 @@ export async function requestDiagnosis(credentials: LlmCredentials, request: Dia
   } catch {
     throw new CliError("The model response was not JSON.");
   }
-  const record = payload as { choices?: Array<{ message?: { content?: unknown } }> };
+  const record = payload as {
+    choices?: Array<{ message?: { content?: unknown } }>;
+  };
   const content = record.choices?.[0]?.message?.content;
   if (typeof content !== "string" || !content.trim()) {
     throw new CliError("The model response did not include a message.");

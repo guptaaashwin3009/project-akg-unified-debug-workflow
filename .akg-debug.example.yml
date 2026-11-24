@@ -1,6 +1,11 @@
 service: payments-api
 datadog:
   query: service:payments-api env:prod
+# Optional. Omit this section to investigate with Datadog and Kubernetes only.
+# The LogQL query is sent as written. Include an error filter here.
+grafana:
+  datasourceUid: loki
+  query: '{app="payments-api"} |= "error"'
 k8s:
   namespace: payments
   selector: app=payments-api

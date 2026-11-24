@@ -13,11 +13,17 @@ export function requireInteractive(command: string): void {
   }
 }
 
-export async function prompt(question: string, defaultValue?: string): Promise<string> {
+export async function prompt(
+  question: string,
+  defaultValue?: string,
+): Promise<string> {
   if (!isInteractive()) {
     throw new CliError("Cannot prompt because stdin is not a terminal.");
   }
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
   const suffix = defaultValue ? ` [${defaultValue}]` : "";
   try {
     const answer = await new Promise<string>((resolve) => {
@@ -38,7 +44,9 @@ export async function confirm(question: string): Promise<boolean> {
 
 export async function promptSecret(label: string): Promise<string> {
   if (!isInteractive()) {
-    throw new CliError("Cannot prompt for a secret because stdin is not a terminal.");
+    throw new CliError(
+      "Cannot prompt for a secret because stdin is not a terminal.",
+    );
   }
   process.stdout.write(`${label}: `);
   const stdin = process.stdin;

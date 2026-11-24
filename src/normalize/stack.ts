@@ -49,16 +49,25 @@ function defaultExists(absPath: string): boolean {
 function insideRoot(root: string, candidate: string): boolean {
   const resolvedRoot = path.resolve(root);
   const resolved = path.resolve(candidate);
-  return resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep);
+  return (
+    resolved === resolvedRoot || resolved.startsWith(resolvedRoot + path.sep)
+  );
 }
 
 function relativePosix(root: string, absPath: string): string {
-  return path.relative(path.resolve(root), path.resolve(absPath)).split(path.sep).join("/");
+  return path
+    .relative(path.resolve(root), path.resolve(absPath))
+    .split(path.sep)
+    .join("/");
 }
 
 function skipped(relativePath: string): boolean {
   const parts = relativePath.split("/");
-  return parts.includes("node_modules") || parts.includes(".git") || parts.includes("dist");
+  return (
+    parts.includes("node_modules") ||
+    parts.includes(".git") ||
+    parts.includes("dist")
+  );
 }
 
 /**

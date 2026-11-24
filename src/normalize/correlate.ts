@@ -17,12 +17,18 @@ function excerptAtLine(content: string, line: number): string {
   const end = Math.min(lines.length, index + CONTEXT_LINES);
   return lines
     .slice(start, end)
-    .map((text, offset) => `${String(start + offset + 1).padStart(4, " ")} | ${text}`)
+    .map(
+      (text, offset) =>
+        `${String(start + offset + 1).padStart(4, " ")} | ${text}`,
+    )
     .join("\n")
     .slice(0, 4000);
 }
 
-function excerptAtIndex(content: string, index: number): { line: number; excerpt: string } {
+function excerptAtIndex(
+  content: string,
+  index: number,
+): { line: number; excerpt: string } {
   const lines = content.split(/\r?\n/);
   let cursor = 0;
   let line = 1;
@@ -76,7 +82,11 @@ function readText(filePath: string): string | undefined {
   return buffer.toString("utf8");
 }
 
-export function correlateSignals(repoRoot: string, signals: Signal[], groups: SignalGroup[]): CodeExcerpt[] {
+export function correlateSignals(
+  repoRoot: string,
+  signals: Signal[],
+  groups: SignalGroup[],
+): CodeExcerpt[] {
   const excerpts: CodeExcerpt[] = [];
   const seen = new Set<string>();
 
@@ -88,7 +98,10 @@ export function correlateSignals(repoRoot: string, signals: Signal[], groups: Si
     excerpts.push(excerpt);
   };
 
-  const texts = [...groups.flatMap((group) => group.samples), ...signals.slice(0, 20)];
+  const texts = [
+    ...groups.flatMap((group) => group.samples),
+    ...signals.slice(0, 20),
+  ];
   for (const signal of texts) {
     const blob = [signal.message, signal.stack].filter(Boolean).join("\n");
     for (const frame of resolveFrames(blob, repoRoot)) {
@@ -107,7 +120,8 @@ export function correlateSignals(repoRoot: string, signals: Signal[], groups: Si
   const phrases = new Set<string>();
   for (const group of groups) {
     for (const sample of group.samples) {
-      for (const phrase of stableSearchPhrases(sample.message)) phrases.add(phrase);
+      for (const phrase of stableSearchPhrases(sample.message))
+        phrases.add(phrase);
     }
   }
 
@@ -119,7 +133,10 @@ export function correlateSignals(repoRoot: string, signals: Signal[], groups: Si
       for (const phrase of phrases) {
         const index = content.indexOf(phrase);
         if (index === -1) continue;
-        const relative = path.relative(repoRoot, filePath).split(path.sep).join("/");
+        const relative = path
+          .relative(repoRoot, filePath)
+          .split(path.sep)
+          .join("/");
         const located = excerptAtIndex(content, index);
         add({
           file: relative,

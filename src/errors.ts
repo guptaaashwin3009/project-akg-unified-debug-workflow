@@ -15,6 +15,13 @@ export class DatadogUnauthorizedError extends Error {
   }
 }
 
+export class GrafanaUnauthorizedError extends Error {
+  constructor() {
+    super("Grafana rejected the API token.");
+    this.name = "GrafanaUnauthorizedError";
+  }
+}
+
 export class KubeAuthError extends Error {
   readonly contextName: string | undefined;
 
